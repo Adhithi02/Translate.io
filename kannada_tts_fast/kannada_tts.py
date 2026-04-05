@@ -458,17 +458,73 @@ class SurgicalKannadaTTS:
             print(f"❌ Converted model synthesis failed: {e}")
             return False
     
+    # Add this method to the SurgicalKannadaTTS class
+# Add this method to the SurgicalKannadaTTS class (after the existing methods)
+
     def synthesize(self, text, output_path='output.wav'):
-        """Main synthesis method"""
-        # Try original models first (most likely to work)
-        if self.synthesize_with_original_models(text, output_path):
-            return True
+        """
+        Simple interface for text-to-speech synthesis
         
-        print("\n🔄 Original models failed, trying converted models...")
-        if self.synthesize_with_converted_models(text, output_path):
-            return True
+        Args:
+            text (str): Text to synthesize
+            output_path (str): Path where to save the audio file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            print(f"🎙️ Synthesizing: {text}")
+            print(f"💾 Output: {output_path}")
+            
+            # Try converted models first (they work better)
+            success = self.synthesize_with_converted_models(text, output_path)
+            
+            if success and Path(output_path).exists():
+                print(f"✅ Synthesis successful: {output_path}")
+                return True
+            else:
+                print("❌ Synthesis failed with converted models, trying original...")
+                # Fallback to original models
+                success = self.synthesize_with_original_models(text, output_path)
+                if success and Path(output_path).exists():
+                    print(f"✅ Synthesis successful with original models: {output_path}")
+                    return True
+                else:
+                    print("❌ Synthesis failed with both model types")
+                    return False
+                    
+        except Exception as e:
+            print(f"❌ Error in synthesis: {e}")
+            return False
         
+def synthesize(self, text, output_path='output.wav'):
+    """
+    Simple interface for text-to-speech synthesis
+    
+    Args:
+        text (str): Text to synthesize
+        output_path (str): Path where to save the audio file
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        print(f"🎙️ Synthesizing: {text}")
+        print(f"💾 Output: {output_path}")
+        
+        # Try converted models first (they work better)
+        success = self.synthesize_with_converted_models(text, output_path)
+        
+        if success and Path(output_path).exists():
+            return True
+        else:
+            print("❌ Synthesis failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error in synthesis: {e}")
         return False
+
 
 def main():
     """Main function"""

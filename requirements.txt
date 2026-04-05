@@ -1,0 +1,61 @@
+# Core ML/AI Libraries
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers>=4.30.0
+tokenizers>=0.13.0
+huggingface-hub>=0.16.0
+
+# Audio Processing
+librosa>=0.10.0
+soundfile>=0.12.0
+pyaudio>=0.2.11
+webrtcvad>=2.0.10
+scipy>=1.10.0
+numpy>=1.24.0
+
+# Speech Recognition
+openai-whisper>=20230918
+
+# Text-to-Speech
+parler-tts>=0.1.0
+
+# Audio Format Conversion
+pydub>=0.25.0
+
+# Indian Language Processing
+IndicTransToolkit>=1.0.0
+indic-nlp-library>=0.81
+
+# GUI Framework
+tkinter  # Usually comes with Python
+
+# Networking
+requests>=2.31.0
+urllib3>=2.0.0
+
+# File Operations
+wave  # Built-in Python module
+os  # Built-in Python module
+threading  # Built-in Python module
+time  # Built-in Python module
+queue  # Built-in Python module
+
+# System Dependencies (install via system package manager)
+# For Ubuntu/Debian:
+# sudo apt-get install portaudio19-dev python3-tk ffmpeg
+
+# For macOS:
+# brew install portaudio ffmpeg
+
+# For Windows:
+# Download PyAudio wheel from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+
+# Optional but recommended
+# CUDA support (if you have NVIDIA GPU)
+# torch-audio
+# torchaudio
+
+# Development/Testing
+setuptools>=65.0.0
+wheel>=0.40.0
+pip>=23.0.0

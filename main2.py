@@ -17,7 +17,22 @@ import librosa
 import webrtcvad
 from scipy.ndimage import uniform_filter1d
 import queue
+import sys
+import tempfile
+from pathlib import Path
 
+# Add the kannada_tts_fast directory to the Python path
+current_dir = Path(__file__).parent.parent
+kannada_tts_path = current_dir / "kannada_tts_fast"
+sys.path.insert(0, str(kannada_tts_path))
+
+# Import the fast Kannada TTS
+try:
+    from kannada_tts import SurgicalKannadaTTS
+    KANNADA_TTS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Kannada TTS not available: {e}")
+    KANNADA_TTS_AVAILABLE = False
 
 class AudioEnhancer:
     """Real-time audio enhancement for noise reduction - using spectral3.py approach"""
@@ -123,8 +138,8 @@ class AudioEnhancer:
 class SpeechTranslatorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Enhanced English to Indian Language Translator")
-        self.root.geometry("650x650")  
+        self.root.title("Enhanced English to Indian Language Translator with Fast Kannada TTS")
+        self.root.geometry("700x750")  # Increased height for new features
         self.root.resizable(True, True)
         
         # Configure style
@@ -137,37 +152,43 @@ class SpeechTranslatorApp:
         self.audio_dir = os.path.join(self.app_dir, "audio_files")
         os.makedirs(self.audio_dir, exist_ok=True)
         
-        # Language mapping
+        # Language mapping - enhanced with TTS support info
         self.language_mapping = {
             "Kannada": {
                 "code": "kan_Knda",
                 "speakers": ["Suresh", "Anu", "Chetan", "Vidya"],
-                "default_speaker": "Suresh"
+                "default_speaker": "Suresh",
+                "fast_tts": True  # Has fast TTS support
             },
             "Telugu": {
                 "code": "tel_Telu",
                 "speakers": ["Prakash", "Lalitha", "Kiran"],
-                "default_speaker": "Prakash"
+                "default_speaker": "Prakash",
+                "fast_tts": False
             },
             "Hindi": {
                 "code": "hin_Deva",
                 "speakers": ["Ravi", "Priya", "Amit"],
-                "default_speaker": "Ravi"
+                "default_speaker": "Ravi",
+                "fast_tts": False
             },
             "Tamil": {
                 "code": "tam_Taml",
                 "speakers": ["Arun", "Meena"],
-                "default_speaker": "Arun"
+                "default_speaker": "Arun",
+                "fast_tts": False
             },
             "Gujarati": {
                 "code": "guj_Gujr",
                 "speakers": ["Jignesh", "Kavita"],
-                "default_speaker": "Jignesh"
+                "default_speaker": "Jignesh",
+                "fast_tts": False
             },
             "Bengali": {
                 "code": "ben_Beng",
                 "speakers": ["Rahul", "Mou"],
-                "default_speaker": "Rahul"
+                "default_speaker": "Rahul",
+                "fast_tts": False
             }
         }
         
@@ -178,6 +199,7 @@ class SpeechTranslatorApp:
         self.temp_wav_file = os.path.join(self.audio_dir, "temp_recording.wav")
         self.enhanced_wav_file = os.path.join(self.audio_dir, "enhanced_recording.wav")
         self.output_file = os.path.join(self.audio_dir, "output.mp3")
+        self.fast_tts_output = os.path.join(self.audio_dir, "fast_kannada_output.wav")
         
         # Initialize audio enhancer with spectral3.py parameters
         self.audio_enhancer = AudioEnhancer(
@@ -193,14 +215,54 @@ class SpeechTranslatorApp:
         self.enhancement_enabled = tk.BooleanVar(value=True)
         self.noise_threshold_var = tk.DoubleVar(value=1.2)  # Default from spectral3.py
         self.auto_play_enabled = tk.BooleanVar(value=True)
+        self.use_fast_tts = tk.BooleanVar(value=True)  # Prefer fast TTS when available
+        
+        # Initialize Kannada TTS variable (will be initialized after UI)
+        self.kannada_tts = None
+        
+        # Create UI first
+        self.create_widgets()
+        
+        # Now initialize Kannada TTS after UI is created
+        if KANNADA_TTS_AVAILABLE:
+            self.init_kannada_tts()
         
         # Initialize models
         self.load_models_thread = threading.Thread(target=self.load_models)
         self.load_models_thread.daemon = True
         self.load_models_thread.start()
-        
-        # Create UI
-        self.create_widgets()
+    
+    def init_kannada_tts(self):
+        """Initialize the fast Kannada TTS system with proper path handling"""
+        try:
+            self.update_status("Initializing Fast Kannada TTS...")
+            
+            # Save current working directory
+            original_cwd = os.getcwd()
+            
+            # Change to the kannada_tts_fast directory where the models are
+            kannada_tts_dir = str(kannada_tts_path)
+            os.chdir(kannada_tts_dir)
+            print(f"Changed working directory to: {kannada_tts_dir}")
+            
+            # Initialize the TTS (now it will find the models in the correct location)
+            self.kannada_tts = SurgicalKannadaTTS()
+            
+            # Change back to original directory
+            os.chdir(original_cwd)
+            print(f"Changed back to original directory: {original_cwd}")
+            
+            print("✅ Fast Kannada TTS initialized successfully")
+            self.update_status("Fast Kannada TTS ready!")
+        except Exception as e:
+            # Make sure to change back to original directory even if there's an error
+            try:
+                os.chdir(original_cwd)
+            except:
+                pass
+            print(f"⚠️ Failed to initialize Fast Kannada TTS: {e}")
+            self.kannada_tts = None
+            self.update_status("Fast Kannada TTS initialization failed")
     
     def load_models(self):
         """Load all models in a background thread to keep UI responsive"""
@@ -230,12 +292,20 @@ class SpeechTranslatorApp:
             
             self.tts_model.eval()
             
-            self.update_status("All models loaded! Ready to record.")
-            self.record_button.config(state=tk.NORMAL)
+            status_msg = "All models loaded! Ready to record."
+            if self.kannada_tts:
+                status_msg += " Fast Kannada TTS ready."
+            self.update_status(status_msg)
+            
+            def enable_record_button():
+                self.record_button.config(state=tk.NORMAL)
+            self.root.after(0, enable_record_button)
             
         except Exception as e:
             self.update_status(f"Error loading models: {str(e)}")
-            messagebox.showerror("Error", f"Failed to load models: {str(e)}")
+            def show_error():
+                messagebox.showerror("Error", f"Failed to load models: {str(e)}")
+            self.root.after(0, show_error)
     
     def create_widgets(self):
         main_frame = ttk.Frame(self.root, padding=20)
@@ -244,6 +314,12 @@ class SpeechTranslatorApp:
         title_label = ttk.Label(main_frame, text="Enhanced English to Indian Language Translator", 
                                font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
+        
+        # Fast TTS indicator
+        if KANNADA_TTS_AVAILABLE:
+            tts_label = ttk.Label(main_frame, text="🚀 Fast Kannada TTS Available", 
+                                 font=("Arial", 10), foreground="green")
+            tts_label.pack()
         
         self.status_label = ttk.Label(main_frame, text="Loading models, please wait...", foreground="blue")
         self.status_label.pack(pady=10)
@@ -260,7 +336,6 @@ class SpeechTranslatorApp:
         threshold_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(threshold_frame, text="Noise Reduction Level:").pack(side=tk.LEFT)
-        # Changed range to match spectral3.py default (1.2) with reasonable range
         threshold_scale = ttk.Scale(threshold_frame, from_=0.5, to=3.0, 
                                   variable=self.noise_threshold_var, orient=tk.HORIZONTAL)
         threshold_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
@@ -273,6 +348,16 @@ class SpeechTranslatorApp:
                                         variable=self.auto_play_enabled)
         auto_play_check.pack(anchor=tk.W, pady=5)
         
+        # TTS Settings Frame
+        tts_settings_frame = ttk.LabelFrame(main_frame, text="TTS Settings", padding=10)
+        tts_settings_frame.pack(fill=tk.X, pady=5)
+        
+        if KANNADA_TTS_AVAILABLE:
+            fast_tts_check = ttk.Checkbutton(tts_settings_frame, 
+                                           text="Use Fast Kannada TTS (when available)", 
+                                           variable=self.use_fast_tts)
+            fast_tts_check.pack(anchor=tk.W)
+        
         # Language Selection Frame
         lang_frame = ttk.Frame(main_frame)
         lang_frame.pack(fill=tk.X, pady=5)
@@ -284,6 +369,10 @@ class SpeechTranslatorApp:
         language_combo = ttk.Combobox(lang_frame, textvariable=self.language_var, values=languages, width=15)
         language_combo.pack(side=tk.LEFT, padx=5)
         language_combo.bind("<<ComboboxSelected>>", self.on_language_change)
+        
+        # TTS Method indicator
+        self.tts_method_label = ttk.Label(lang_frame, text="🚀 Fast TTS", foreground="green", font=("Arial", 10))
+        self.tts_method_label.pack(side=tk.LEFT, padx=10)
         
         # Recording Button
         self.record_button = ttk.Button(main_frame, text="Start Recording", 
@@ -299,12 +388,12 @@ class SpeechTranslatorApp:
         text_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
         ttk.Label(text_frame, text="English:").pack(anchor=tk.W)
-        self.english_text = tk.Text(text_frame, height=4, wrap=tk.WORD)
+        self.english_text = tk.Text(text_frame, height=3, wrap=tk.WORD)
         self.english_text.pack(fill=tk.X, pady=5)
         
         self.translated_label = ttk.Label(text_frame, text="Kannada:")
         self.translated_label.pack(anchor=tk.W)
-        self.translated_text = tk.Text(text_frame, height=4, wrap=tk.WORD)
+        self.translated_text = tk.Text(text_frame, height=3, wrap=tk.WORD)
         self.translated_text.pack(fill=tk.X, pady=5)
         
         # Speaker Selection Frame
@@ -336,17 +425,25 @@ class SpeechTranslatorApp:
     def on_language_change(self, event=None):
         selected_language = self.language_var.get()
         if selected_language in self.language_mapping:
-            speakers = self.language_mapping[selected_language]["speakers"]
-            default_speaker = self.language_mapping[selected_language]["default_speaker"]
+            lang_info = self.language_mapping[selected_language]
+            speakers = lang_info["speakers"]
+            default_speaker = lang_info["default_speaker"]
             
             self.speaker_combo['values'] = speakers
             self.speaker_var.set(default_speaker)
             
             self.translated_label.config(text=f"{selected_language}:")
+            
+            # Update TTS method indicator
+            if selected_language == "Kannada" and self.use_fast_tts.get() and self.kannada_tts:
+                self.tts_method_label.config(text="🚀 Fast TTS", foreground="green")
+            else:
+                self.tts_method_label.config(text="🐌 Standard TTS", foreground="orange")
     
     def update_status(self, message):
         def _update():
-            self.status_label.config(text=message)
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text=message)
         
         if threading.current_thread() is threading.main_thread():
             _update()
@@ -356,7 +453,8 @@ class SpeechTranslatorApp:
     def update_quality_info(self, message):
         """Update audio quality information"""
         def _update():
-            self.quality_label.config(text=message)
+            if hasattr(self, 'quality_label'):
+                self.quality_label.config(text=message)
         
         if threading.current_thread() is threading.main_thread():
             _update()
@@ -512,6 +610,60 @@ class SpeechTranslatorApp:
                 return True
             except:
                 return False
+
+    def synthesize_with_fast_kannada_tts(self, text):
+        """Use the fast Kannada TTS for synthesis"""
+        try:
+            if not self.kannada_tts:
+                return False
+                
+            self.update_status("🚀 Generating speech with Fast Kannada TTS...")
+            
+            # Save current working directory
+            original_cwd = os.getcwd()
+            
+            try:
+                # Change to kannada_tts_fast directory for synthesis
+                kannada_tts_dir = str(kannada_tts_path)
+                os.chdir(kannada_tts_dir)
+                
+                # Generate unique filename with timestamp
+                timestamp = int(time.time())
+                output_path = os.path.join(self.audio_dir, f"fast_kannada_{timestamp}.wav")
+                
+                # Use the fast TTS
+                success = self.kannada_tts.synthesize(text, output_path)
+                
+                # Change back to original directory
+                os.chdir(original_cwd)
+                
+                if success and os.path.exists(output_path):
+                    # Convert to the expected output format if needed
+                    if self.output_file.endswith(".mp3"):
+                        sound = AudioSegment.from_wav(output_path)
+                        sound.export(self.output_file, format="mp3")
+                        os.remove(output_path)  # Clean up temporary wav
+                    else:
+                        # Just copy/rename the wav file
+                        import shutil
+                        shutil.copy2(output_path, self.output_file.replace(".mp3", ".wav"))
+                        os.remove(output_path)
+                    
+                    self.update_quality_info("🚀 Fast Kannada TTS synthesis completed")
+                    return True
+                else:
+                    self.update_quality_info("❌ Fast TTS synthesis failed")
+                    return False
+            
+            except Exception as synthesis_error:
+                # Ensure we change back to original directory
+                os.chdir(original_cwd)
+                raise synthesis_error
+                
+        except Exception as e:
+            print(f"Fast Kannada TTS error: {e}")
+            self.update_quality_info(f"Fast TTS error: {str(e)}")
+            return False
     
     def process_recording(self):
         """Process the recorded audio through the translation pipeline"""
@@ -519,7 +671,9 @@ class SpeechTranslatorApp:
             # Check if recording file exists and has content
             if not os.path.exists(self.temp_wav_file) or os.path.getsize(self.temp_wav_file) < 100:
                 self.update_status("Error: Recording file is empty or too small")
-                messagebox.showerror("Error", "No audio was recorded. Please check your microphone settings.")
+                def show_error():
+                    messagebox.showerror("Error", "No audio was recorded. Please check your microphone settings.")
+                self.root.after(0, show_error)
                 return
             
             # Start progress bar
@@ -545,7 +699,9 @@ class SpeechTranslatorApp:
             
             if not english_text.strip():
                 self.update_status("Error: Could not transcribe any text")
-                messagebox.showerror("Error", "No speech detected in the recording. Please try again.")
+                def show_error():
+                    messagebox.showerror("Error", "No speech detected in the recording. Please try again.")
+                self.root.after(0, show_error)
                 self.root.after(0, self.progress.stop)
                 return
             
@@ -589,58 +745,86 @@ class SpeechTranslatorApp:
                 self.translated_text.insert(tk.END, translated_text)
             self.root.after(0, update_translated)
             
-            # Step 3: Text to Speech
-            self.update_status(f"Generating {selected_language} speech...")
-            speaker = self.speaker_var.get()
-            description = f"{speaker}'s voice is clear and natural."
+            # Step 3: Text to Speech - Choose method based on language and settings
+            tts_success = False
             
-            description_inputs = self.description_tokenizer(description, return_tensors="pt")
-            prompt_inputs = self.tts_tokenizer(translated_text, return_tensors="pt")
+            # Try Fast Kannada TTS first if applicable
+            if (selected_language == "Kannada" and 
+                self.use_fast_tts.get() and 
+                self.kannada_tts):
+                
+                print("🚀 Using Fast Kannada TTS")
+                tts_success = self.synthesize_with_fast_kannada_tts(translated_text)
             
-            description_input_ids = description_inputs.input_ids.to(self.DEVICE)
-            description_attention_mask = description_inputs.attention_mask.to(self.DEVICE)
-            prompt_input_ids = prompt_inputs.input_ids.to(self.DEVICE)
-            prompt_attention_mask = prompt_inputs.attention_mask.to(self.DEVICE)
-            
-            with torch.no_grad():
-                generation = self.tts_model.generate(
-                    input_ids=description_input_ids,
-                    attention_mask=description_attention_mask,
-                    prompt_input_ids=prompt_input_ids,
-                    prompt_attention_mask=prompt_attention_mask
-                )
-            
-            audio_arr = generation.cpu().numpy().squeeze()
-            wav_output = self.output_file.replace(".mp3", ".wav")
-            sf.write(wav_output, audio_arr, self.tts_model.config.sampling_rate)
-            
-            if self.output_file.endswith(".mp3"):
-                sound = AudioSegment.from_wav(wav_output)
-                sound.export(self.output_file, format="mp3")
-                os.remove(wav_output)
+            # Fallback to standard TTS if fast TTS failed or not applicable
+            if not tts_success:
+                print("🐌 Using Standard TTS")
+                self.update_status(f"Generating {selected_language} speech with Standard TTS...")
+                speaker = self.speaker_var.get()
+                description = f"{speaker}'s voice is clear and natural."
+                
+                description_inputs = self.description_tokenizer(description, return_tensors="pt")
+                prompt_inputs = self.tts_tokenizer(translated_text, return_tensors="pt")
+                
+                description_input_ids = description_inputs.input_ids.to(self.DEVICE)
+                description_attention_mask = description_inputs.attention_mask.to(self.DEVICE)
+                prompt_input_ids = prompt_inputs.input_ids.to(self.DEVICE)
+                prompt_attention_mask = prompt_inputs.attention_mask.to(self.DEVICE)
+                
+                with torch.no_grad():
+                    generation = self.tts_model.generate(
+                        input_ids=description_input_ids,
+                        attention_mask=description_attention_mask,
+                        prompt_input_ids=prompt_input_ids,
+                        prompt_attention_mask=prompt_attention_mask
+                    )
+                
+                audio_arr = generation.cpu().numpy().squeeze()
+                wav_output = self.output_file.replace(".mp3", ".wav")
+                sf.write(wav_output, audio_arr, self.tts_model.config.sampling_rate)
+                
+                if self.output_file.endswith(".mp3"):
+                    sound = AudioSegment.from_wav(wav_output)
+                    sound.export(self.output_file, format="mp3")
+                    os.remove(wav_output)
+                
+                self.update_quality_info("🐌 Standard TTS synthesis completed")
+                tts_success = True
             
             # Enable play button
             def enable_play():
                 self.play_button.config(state=tk.NORMAL)
                 self.progress.stop()
-                self.update_status("Translation complete! Ready to play.")
-                if self.auto_play_enabled.get():
-                    self.root.after(100, self.play_audio)
+                
+                if tts_success:
+                    self.update_status("Translation complete! Ready to play.")
+                    if self.auto_play_enabled.get():
+                        self.root.after(100, self.play_audio)
+                else:
+                    self.update_status("Translation complete but TTS failed.")
+                    
             self.root.after(0, enable_play)
             
         except Exception as e:
             self.root.after(0, self.progress.stop)
             self.update_status(f"Error: {str(e)}")
-            messagebox.showerror("Error", f"Processing failed: {str(e)}")
+            def show_error():
+                messagebox.showerror("Error", f"Processing failed: {str(e)}")
+            self.root.after(0, show_error)
     
     def play_audio(self):
         try:
             if os.name == "nt":  # Windows
                 os.system(f"start {self.output_file}")
             else:  # Linux/Mac
-                os.system(f"mpg123 {self.output_file}")
+                if self.output_file.endswith(".wav"):
+                    os.system(f"open '{self.output_file}'")  # Mac
+                else:
+                    os.system(f"open '{self.output_file}'")  # Mac - handles both wav and mp3
         except Exception as e:
-            messagebox.showerror("Error", f"Could not play audio: {str(e)}")
+            def show_error():
+                messagebox.showerror("Error", f"Could not play audio: {str(e)}")
+            self.root.after(0, show_error)
 
 
 if __name__ == "__main__":
